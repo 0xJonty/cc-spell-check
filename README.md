@@ -2,6 +2,11 @@
 
 Live spell check for the Claude Code terminal. The desktop app has spell check in its input box; the terminal TUI does not — this plugin adds it.
 
+> Note: Claude Code also ships a native `spellcheck` setting (underline-only, off by default):
+> `{ "spellcheck": { "enabled": true, "checker": "aspell", "language": "en_AU" } }` in `~/.claude/settings.json`.
+> This plugin goes further: fix-suggestion buttons above the prompt, a persistent personal
+> dictionary, and a `/spell` command. Enable one or the other, not both (double underlines).
+
 - Red underlines on misspelled words as you type, painted directly in the prompt box (`prompt.edit` decorations).
 - A suggestion band above the prompt with fix buttons and an add-to-dictionary button.
 - `/spell` command: `on | off | status | add <word> | remove <word>`.
