@@ -1,0 +1,21 @@
+{
+  "name": "cc-spell-check",
+  "version": "0.1.0",
+  "description": "Live spell check for the Claude Code terminal: red underlines in the prompt box, suggestion band above it",
+  "author": { "name": "Jonty Atkinson" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "lang": {
+      "type": "string",
+      "title": "Dictionary language",
+      "default": "en_AU",
+      "description": "aspell dictionary language (aspell -l <lang> dump master)"
+    },
+    "enabled": {
+      "type": "boolean",
+      "title": "Spell check enabled",
+      "default": true,
+      "description": "Spell check the prompt box"
+    }
+  }
+}
