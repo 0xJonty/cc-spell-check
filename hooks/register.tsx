@@ -34,7 +34,7 @@ type Flag = Token & { kind: 'spelling' | 'contraction'; fix?: string }
 const CONTRACTION_COLOR = '#ffa500'
 
 function recase(word: string, like: string): string {
-  return /^[A-Z]/.test(like) ? word[0].toUpperCase() + word.slice(1) : word
+  return /^[A-Z]/.test(like) ? word.charAt(0).toUpperCase() + word.slice(1) : word
 }
 
 function classify(tokens: Token[]): Flag[] {

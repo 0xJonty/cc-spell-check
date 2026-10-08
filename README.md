@@ -33,5 +33,6 @@ or launch with `claude --plugin-dir /home/jonty/claude-plugins/cc-spell-check`.
 ```sh
 claude plugin validate .
 claude plugin test .
-tsc -p .            # after first load has generated .claude-plugin/types/
+npx -y -p typescript tsc -p . --noEmit   # after first load has generated .claude-plugin/types/
+# (bare `npx tsc` resolves to a decoy npm package named "tsc" — always pin -p typescript)
 ```

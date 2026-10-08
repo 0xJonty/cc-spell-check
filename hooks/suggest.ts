@@ -72,5 +72,5 @@ export function suggestionsFor(
 
 function recase(suggestions: string[], word: string): string[] {
   if (!/^[A-Z]/.test(word)) return suggestions
-  return suggestions.map(s => s[0].toUpperCase() + s.slice(1))
+  return suggestions.map(s => s.charAt(0).toUpperCase() + s.slice(1))
 }
