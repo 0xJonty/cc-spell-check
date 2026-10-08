@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 
 const ASPELL_OK = {
   exitCode: 0,
-  stdout: 'please\ninclude\nthe\nsetup\nsteps\nhello\nworld\n',
+  stdout: "please\ninclude\nthe\nsetup\nsteps\nhello\nworld\ndon't\nforget\n",
   stderr: '',
   isStdoutTruncated: false,
   isStderrTruncated: false,
@@ -80,7 +80,19 @@ describe('cc-spell-check hooks', () => {
     bottoms(on)
     const r = await startWithDict($)
     expect(r.text).toContain('ready')
-    expect(r.text).toContain('7 words')
+    expect(r.text).toContain('9 words')
+  })
+
+  test('flags a missing-apostrophe contraction in orange with its exact fix', async ($, on) => {
+    bottoms(on)
+    await startWithDict($)
+    const r = await edit($, 'dont forget the setu', 'p')
+    expect(r.decorations).toEqual([
+      { start: 0, end: 4, color: '#ffa500', underline: true },
+    ])
+    // The apostrophized form itself passes.
+    const ok = await edit($, "don't forget the setu", 'p')
+    expect(ok.decorations ?? []).toEqual([])
   })
 
   test('underlines a settled misspelling, leaves clean text alone', async ($, on) => {

@@ -3,6 +3,8 @@ export type SpellActive = {
   start: number
   end: number
   isCapitalized: boolean
+  kind: 'spelling' | 'contraction'
+  fix?: string
 } | null
 
 export type SpellDictStatus = 'loading' | 'ready' | 'fallback' | 'missing'

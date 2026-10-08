@@ -2,7 +2,13 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PromptDecoration, Register } from 'claude-code'
 
 import type { SpellActive, SpellDictStatus } from '../types'
-import { HUNSPELL_DIC, parseAspellDump, parseHunspellDic, type Dictionary } from './dictionary'
+import {
+  HUNSPELL_DIC,
+  parseAspellDump,
+  parseHunspellDic,
+  type DictData,
+  type Dictionary,
+} from './dictionary'
 import { suggestionsFor } from './suggest'
 import { flagged, tokenize, type Token } from './tokenizer'
 
@@ -12,6 +18,7 @@ const dictStatus = atom({ plugin: 'cc-spell-check', key: 'dictStatus' } as const
 
 // Module scope: reset on hot reload; session.start re-fires then and rebuilds.
 let dict: Dictionary | null = null
+let contractions = new Map<string, string>()
 let personal = new Set<string>()
 let enabledNow = true
 const suggestCache = new Map<string, string[]>()
@@ -20,8 +27,27 @@ let lastActiveKey = ''
 // Above this, flagging is skipped entirely so huge pastes never lag a keystroke.
 const MAX_CHARS = 10_000
 
-function pickNearest(bad: Token[], cursor: number): Token | null {
-  let nearest: Token | null = null
+// A flagged token: a plain misspelling, or a contraction missing its
+// apostrophe ("dont" -> "don't"), which gets its own color and exact fix.
+type Flag = Token & { kind: 'spelling' | 'contraction'; fix?: string }
+
+const CONTRACTION_COLOR = '#ffa500'
+
+function recase(word: string, like: string): string {
+  return /^[A-Z]/.test(like) ? word[0].toUpperCase() + word.slice(1) : word
+}
+
+function classify(tokens: Token[]): Flag[] {
+  return tokens.map(t => {
+    const fix = contractions.get(t.word.toLowerCase())
+    return fix
+      ? { ...t, kind: 'contraction' as const, fix: recase(fix, t.word) }
+      : { ...t, kind: 'spelling' as const }
+  })
+}
+
+function pickNearest(bad: Flag[], cursor: number): Flag | null {
+  let nearest: Flag | null = null
   for (const t of bad) {
     if (t.start <= cursor && cursor <= t.end) return t
     if (t.end <= cursor && (!nearest || t.end > nearest.end)) nearest = t
@@ -29,38 +55,43 @@ function pickNearest(bad: Token[], cursor: number): Token | null {
   return nearest
 }
 
-function toDecorations(bad: Token[]): PromptDecoration[] {
-  return bad.map(t => ({ start: t.start, end: t.end, color: 'red', underline: true }))
+function toDecorations(bad: Flag[]): PromptDecoration[] {
+  return bad.map(t => ({
+    start: t.start,
+    end: t.end,
+    color: t.kind === 'contraction' ? CONTRACTION_COLOR : 'red',
+    underline: true,
+  }))
 }
 
 function decorationsFor(text: string, cursor: number): PromptDecoration[] {
   if (!dict) return []
-  const bad = flagged(tokenize(text), dict, personal)
+  const bad = classify(flagged(tokenize(text), dict, personal))
   return toDecorations(bad.filter(t => cursor < t.start || cursor > t.end))
 }
 
 async function loadDictionary(
   $: EngineInterface,
   lang: string,
-): Promise<{ dict: Dictionary | null; status: SpellDictStatus }> {
+): Promise<{ data: DictData | null; status: SpellDictStatus }> {
   try {
     const run = await $.process.run(['aspell', '-l', lang, 'dump', 'master'], {
       timeoutMs: 15_000,
     })
     if (run.exitCode === 0) {
-      const dict = parseAspellDump(run.stdout, run.isStdoutTruncated)
-      if (dict.size > 0) return { dict, status: 'ready' }
+      const data = parseAspellDump(run.stdout, run.isStdoutTruncated)
+      if (data.dict.size > 0) return { data, status: 'ready' }
     }
   } catch {
     // aspell missing or failed to start: fall through
   }
   try {
-    const dict = parseHunspellDic(await $.fs.read(HUNSPELL_DIC))
-    if (dict.size > 0) return { dict, status: 'fallback' }
+    const data = parseHunspellDic(await $.fs.read(HUNSPELL_DIC))
+    if (data.dict.size > 0) return { data, status: 'fallback' }
   } catch {
     // no hunspell wordlist either
   }
-  return { dict: null, status: 'missing' }
+  return { data: null, status: 'missing' }
 }
 
 async function clearActive($: EngineInterface) {
@@ -107,7 +138,8 @@ export const register: Register = (on, options) => {
     void (async () => {
       personal = new Set(((await $.store.get('personalWords')) as string[] | undefined) ?? [])
       const loaded = await loadDictionary($, lang())
-      dict = loaded.dict
+      dict = loaded.data?.dict ?? null
+      contractions = loaded.data?.contractions ?? new Map()
       await update($, dictStatus, () => loaded.status)
       if (loaded.status === 'missing') {
         $.ui.toast('cc-spell-check: no dictionary found (sudo apt install aspell aspell-en)')
@@ -125,7 +157,7 @@ export const register: Register = (on, options) => {
       if (lastActiveKey !== '') void clearActive($)
       return r
     }
-    const bad = flagged(tokenize(r.text), dict, personal)
+    const bad = classify(flagged(tokenize(r.text), dict, personal))
     // A word still under the cursor is mid-typing: flag it only once the
     // cursor has moved past it (space, punctuation, click elsewhere).
     const settled = bad.filter(t => r.cursor < t.start || r.cursor > t.end)
@@ -150,11 +182,14 @@ export const register: Register = (on, options) => {
     const cur = await read($, active)
     if (!cur || !dict || !(await read($, isEnabled))) return next(e)
 
-    const sugg = suggestionsFor(cur.word, dict, suggestCache)
+    const sugg =
+      cur.kind === 'contraction' && cur.fix
+        ? [cur.fix]
+        : suggestionsFor(cur.word, dict, suggestCache)
     const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box>
-        <Text color="red">✗ {cur.word} </Text>
+        <Text color={cur.kind === 'contraction' ? CONTRACTION_COLOR : 'red'}>✗ {cur.word} </Text>
         {sugg.map((s, i) => (
           <Button
             key={`fix-${i}`}
