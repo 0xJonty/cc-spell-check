@@ -33,9 +33,10 @@ function toDecorations(bad: Token[]): PromptDecoration[] {
   return bad.map(t => ({ start: t.start, end: t.end, color: 'red', underline: true }))
 }
 
-function decorationsFor(text: string): PromptDecoration[] {
+function decorationsFor(text: string, cursor: number): PromptDecoration[] {
   if (!dict) return []
-  return toDecorations(flagged(tokenize(text), dict, personal))
+  const bad = flagged(tokenize(text), dict, personal)
+  return toDecorations(bad.filter(t => cursor < t.start || cursor > t.end))
 }
 
 async function loadDictionary(
@@ -79,7 +80,7 @@ async function applyFix($: EngineInterface, cur: NonNullable<SpellActive>, repla
     end = again.end
   }
   const text = box.text.slice(0, start) + replacement + box.text.slice(end)
-  await $.prompt.fill({ text, mode: 'replace', decorations: decorationsFor(text) })
+  await $.prompt.fill({ text, mode: 'replace', decorations: decorationsFor(text, text.length) })
   await clearActive($)
 }
 
@@ -125,14 +126,17 @@ export const register: Register = (on, options) => {
       return r
     }
     const bad = flagged(tokenize(r.text), dict, personal)
-    const near = pickNearest(bad, r.cursor)
+    // A word still under the cursor is mid-typing: flag it only once the
+    // cursor has moved past it (space, punctuation, click elsewhere).
+    const settled = bad.filter(t => r.cursor < t.start || r.cursor > t.end)
+    const near = pickNearest(settled, r.cursor)
     const key = near ? `${near.word}:${near.start}` : ''
     if (key !== lastActiveKey) {
       lastActiveKey = key
       void update($, active, () => near)
     }
-    if (bad.length === 0) return r
-    return { ...r, decorations: toDecorations(bad) }
+    if (settled.length === 0) return r
+    return { ...r, decorations: toDecorations(settled) }
   })
 
   on('prompt.submit', ($, e, next) => {

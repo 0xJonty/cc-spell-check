@@ -83,23 +83,28 @@ describe('cc-spell-check hooks', () => {
     expect(r.text).toContain('7 words')
   })
 
-  test('underlines misspellings on prompt.edit, leaves clean text alone', async ($, on) => {
+  test('underlines a settled misspelling, leaves clean text alone', async ($, on) => {
     bottoms(on)
     await startWithDict($)
 
-    const r = await $.prompt.edit({
-      ...COMPOSER,
-      text: 'please incldu the setup',
-      cursor: 13,
-      start: 13,
-      end: 13,
-      inputText: 'e',
-    })
+    // "incldue" sits behind the cursor: settled, so it is flagged.
+    const r = await edit($, 'please incldue the setu', 'p')
     expect(r.text).toBe('please incldue the setup')
     expect(r.decorations).toEqual([{ start: 7, end: 14, color: 'red', underline: true }])
 
     const clean = await edit($, 'please include the setup', ' ')
     expect(clean.decorations ?? []).toEqual([])
+  })
+
+  test('does not flag the word still being typed', async ($, on) => {
+    bottoms(on)
+    await startWithDict($)
+    // Cursor ends inside/at the end of "incldu": mid-typing, no flag yet.
+    const r = await edit($, 'please incld', 'u')
+    expect(r.decorations ?? []).toEqual([])
+    // Cursor moves past it (space typed): now flagged.
+    const settled = await edit($, 'please incldu', ' ')
+    expect((settled.decorations ?? []).length).toBe(1)
   })
 
   test('falls back to hunspell parsing when aspell fails', async ($, on) => {
@@ -121,21 +126,21 @@ describe('cc-spell-check hooks', () => {
     await startWithDict($)
 
     await spell($, 'off')
-    const off = await edit($, 'please incldu', 'e')
+    const off = await edit($, 'please incldue the setu', 'p')
     expect(off.decorations ?? []).toEqual([])
     await spell($, 'on')
 
     await spell($, 'add zorp')
-    const taught = await edit($, 'zorp hello worl', 'd')
+    const taught = await edit($, 'zorp hello the setu', 'p')
     expect(taught.decorations ?? []).toEqual([])
-    const flaggedAgain = await edit($, 'zorp hello worl', 'x')
+    const flaggedAgain = await edit($, 'zorpx hello the setu', 'p')
     expect((flaggedAgain.decorations ?? []).length).toBe(1)
   })
 
   test('disabled by config', { options: { enabled: false } }, async ($, on) => {
     bottoms(on)
     await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
-    const r = await edit($, 'incldu', 'e')
+    const r = await edit($, 'incldue the setu', 'p')
     expect(r.decorations ?? []).toEqual([])
   })
 })
