@@ -28,6 +28,15 @@ describe('suggestionsFor', () => {
     expect(suggestionsFor('aat', dict, fresh()).length).toBe(3)
   })
 
+  test('honours the requested count, capped at 9, and shares one cache', () => {
+    const many = new Set(['bat', 'cat', 'eat', 'fat', 'hat', 'mat', 'pat', 'rat', 'sat', 'vat', 'oat'])
+    const cache = fresh()
+    expect(suggestionsFor('aat', many, cache, 5).length).toBe(5)
+    expect(suggestionsFor('aat', many, cache, 1).length).toBe(1)
+    expect(suggestionsFor('aat', many, cache, 50).length).toBe(9)
+    expect(suggestionsFor('aat', many, cache).length).toBe(3)
+  })
+
   test('returns nothing for long gibberish', () => {
     expect(suggestionsFor('xqzjwklpv', dict, fresh())).toEqual([])
   })
