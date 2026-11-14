@@ -1,5 +1,8 @@
 const LETTERS = "abcdefghijklmnopqrstuvwxyz'"
-const MAX_SUGGESTIONS = 3
+// Default and hard limit for how many suggestions are offered. The band gives
+// each button a one-digit hotkey, so nine is the most that can be keyed.
+export const DEFAULT_SUGGESTIONS = 3
+export const MAX_SUGGESTIONS = 9
 const MAX_EDITS2_HITS = 10
 const MAX_EDITS2_LENGTH = 8
 export const SUGGEST_CACHE_CAP = 500
@@ -36,17 +39,20 @@ function rank(word: string, candidates: Map<string, number>): string[] {
 }
 
 /**
- * Up to 3 corrections for a flagged word: dictionary words at edit distance 1,
- * falling back to distance 2 for short words. Cached per lowercased word.
+ * Up to `max` corrections (default 3, at most 9) for a flagged word:
+ * dictionary words at edit distance 1, falling back to distance 2 for short
+ * words. The cache holds the full ranked list, so `max` can change freely.
  */
 export function suggestionsFor(
   word: string,
   dict: Set<string>,
   cache: Map<string, string[]>,
+  max: number = DEFAULT_SUGGESTIONS,
 ): string[] {
+  const limit = Math.min(MAX_SUGGESTIONS, Math.max(1, Math.floor(max) || DEFAULT_SUGGESTIONS))
   const lower = word.toLowerCase()
   const cached = cache.get(lower)
-  if (cached) return recase(cached, word)
+  if (cached) return recase(cached.slice(0, limit), word)
 
   const candidates = new Map<string, number>()
   const e1 = edits1(lower)
@@ -67,7 +73,7 @@ export function suggestionsFor(
   const ranked = rank(lower, candidates)
   if (cache.size >= SUGGEST_CACHE_CAP) cache.clear()
   cache.set(lower, ranked)
-  return recase(ranked, word)
+  return recase(ranked.slice(0, limit), word)
 }
 
 function recase(suggestions: string[], word: string): string[] {

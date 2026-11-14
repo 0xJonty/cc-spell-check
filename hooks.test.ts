@@ -149,6 +149,30 @@ describe('cc-spell-check hooks', () => {
     expect((flaggedAgain.decorations ?? []).length).toBe(1)
   })
 
+  test('/spell list, fix and unfix manage the dictionary and suggestion overrides', async ($, on) => {
+    const store = bottoms(on)
+    await startWithDict($)
+
+    await spell($, 'add zorp')
+    await spell($, 'fix recieve receive')
+    const listed = await spell($, 'list')
+    expect(listed.text).toContain('zorp')
+    expect(listed.text).toContain('recieve -> receive')
+    expect(store.get('suggestOverrides')).toEqual({ recieve: ['receive'] })
+
+    await spell($, 'unfix recieve')
+    const after = await spell($, 'list')
+    expect(after.text).not.toContain('recieve')
+    expect(store.get('suggestOverrides')).toEqual({})
+  })
+
+  test('/spell fix with no correction explains usage', async ($, on) => {
+    bottoms(on)
+    await startWithDict($)
+    const r = await spell($, 'fix recieve')
+    expect(r.text).toContain('Usage')
+  })
+
   test('disabled by config', { options: { enabled: false } }, async ($, on) => {
     bottoms(on)
     await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })

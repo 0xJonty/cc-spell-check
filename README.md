@@ -9,7 +9,9 @@ Live spell check for the Claude Code terminal. The desktop app has spell check i
 
 - Red underlines on misspelled words as you type, painted directly in the prompt box (`prompt.edit` decorations).
 - A suggestion band above the prompt with fix buttons and an add-to-dictionary button.
-- `/spell` command: `on | off | status | add <word> | remove <word>`.
+- `/spell` command: `on | off | status | list | add <word> | remove <word> | fix <typo> <fix> | unfix <typo>`.
+  `list` shows the personal dictionary and your suggestion overrides. `fix recieve receive` makes `receive` the first suggestion for `recieve` from then on; `unfix recieve` removes it.
+- Number of suggestions is a setting (`maxSuggestions` in `/config`, 1 to 9, default 3).
 - Dictionary from `aspell dump master` (default lang `en_AU`, configurable in `/config`), with a hunspell wordlist fallback. Personal dictionary persisted across sessions.
 - The submitted prompt is never rewritten — spell check is visual only.
 

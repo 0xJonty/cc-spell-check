@@ -11,6 +11,14 @@
       "default": "en_AU",
       "description": "aspell dictionary language (aspell -l <lang> dump master)"
     },
+    "maxSuggestions": {
+      "type": "number",
+      "title": "Suggestions offered",
+      "default": 3,
+      "min": 1,
+      "max": 9,
+      "description": "How many fix buttons to show for a misspelled word (1 to 9)"
+    },
     "enabled": {
       "type": "boolean",
       "title": "Spell check enabled",

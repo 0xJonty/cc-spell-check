@@ -9,7 +9,7 @@ import {
   type DictData,
   type Dictionary,
 } from './dictionary'
-import { suggestionsFor } from './suggest'
+import { DEFAULT_SUGGESTIONS, MAX_SUGGESTIONS, suggestionsFor } from './suggest'
 import { flagged, tokenize, type Token } from './tokenizer'
 
 const active = atom({ plugin: 'cc-spell-check', key: 'active' } as const, null)
@@ -20,6 +20,8 @@ const dictStatus = atom({ plugin: 'cc-spell-check', key: 'dictStatus' } as const
 let dict: Dictionary | null = null
 let contractions = new Map<string, string>()
 let personal = new Set<string>()
+// User-directed suggestions: misspelling -> corrections shown first.
+let overrides: Record<string, string[]> = {}
 let enabledNow = true
 const suggestCache = new Map<string, string[]>()
 let lastActiveKey = ''
@@ -125,18 +127,29 @@ async function addWord($: EngineInterface, word: string) {
 
 export const register: Register = (on, options) => {
   const lang = () => String(options.lang ?? 'en_AU')
+  // How many fix buttons to offer, 1 to 9 (one-digit hotkeys).
+  const maxSuggestions = () => {
+    const n = Math.floor(Number(options.maxSuggestions))
+    return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_SUGGESTIONS) : DEFAULT_SUGGESTIONS
+  }
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'spell',
       description: 'Spell check: toggle, status, personal dictionary',
-      argumentHint: '[on|off|status|add <word>|remove <word>]',
+      argumentHint: '[on|off|status|list|add <word>|remove <word>|fix <typo> <fix>|unfix <typo>]',
     })
     enabledNow = options.enabled !== false
     void update($, isEnabled, () => enabledNow)
     // Dictionary load runs off the critical path; no flagging until it lands.
     void (async () => {
-      personal = new Set(((await $.store.get('personalWords')) as string[] | undefined) ?? [])
+      // One await for both reads: keeps the load chain the length the tests wait for.
+      const [words, fixes] = await Promise.all([
+        $.store.get('personalWords'),
+        $.store.get('suggestOverrides'),
+      ])
+      personal = new Set((words as string[] | undefined) ?? [])
+      overrides = (fixes as Record<string, string[]> | undefined) ?? {}
       const loaded = await loadDictionary($, lang())
       dict = loaded.data?.dict ?? null
       contractions = loaded.data?.contractions ?? new Map()
@@ -182,10 +195,13 @@ export const register: Register = (on, options) => {
     const cur = await read($, active)
     if (!cur || !dict || !(await read($, isEnabled))) return next(e)
 
+    const own = (overrides[cur.word.toLowerCase()] ?? []).map(s => recase(s, cur.word))
     const sugg =
       cur.kind === 'contraction' && cur.fix
         ? [cur.fix]
-        : suggestionsFor(cur.word, dict, suggestCache)
+        : [
+            ...new Set([...own, ...suggestionsFor(cur.word, dict, suggestCache, maxSuggestions())]),
+          ].slice(0, maxSuggestions())
     const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box>
@@ -221,6 +237,30 @@ export const register: Register = (on, options) => {
         for (const w of rest) personal.add(w.toLowerCase())
         await $.store.set('personalWords', [...personal].sort())
         return { text: `Added to personal dictionary: ${rest.join(', ')}` }
+      }
+      case 'list': {
+        const words = [...personal].sort()
+        const fixes = Object.entries(overrides).map(([k, v]) => `${k} -> ${v.join('/')}`)
+        return {
+          text:
+            (words.length
+              ? `Personal dictionary (${words.length}): ${words.join(', ')}`
+              : 'Personal dictionary is empty.') +
+            (fixes.length ? `\nSuggestion overrides (${fixes.length}): ${fixes.join(', ')}` : ''),
+        }
+      }
+      case 'fix': {
+        const [wrong, ...right] = rest
+        if (!wrong || right.length === 0) return { text: 'Usage: /spell fix <misspelling> <correction> [...]' }
+        overrides[wrong.toLowerCase()] = right.map(w => w.toLowerCase())
+        await $.store.set('suggestOverrides', overrides)
+        return { text: `Suggestions for "${wrong.toLowerCase()}" now start with: ${right.join(', ')}` }
+      }
+      case 'unfix': {
+        if (rest.length === 0) return { text: 'Usage: /spell unfix <misspelling> [...]' }
+        for (const w of rest) delete overrides[w.toLowerCase()]
+        await $.store.set('suggestOverrides', overrides)
+        return { text: `Removed suggestion overrides: ${rest.join(', ')}` }
       }
       case 'remove': {
         if (rest.length === 0) return { text: 'Usage: /spell remove <word> [...]' }
