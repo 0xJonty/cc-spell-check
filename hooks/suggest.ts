@@ -19,10 +19,24 @@ function edits1(word: string): string[] {
   return out
 }
 
+// Swapped adjacent letters ("teh" -> "the") are the commonest typo, so they
+// outrank other edits at the same distance.
+function swaps(word: string): Set<string> {
+  const out = new Set<string>()
+  for (let i = 0; i < word.length - 1; i++) {
+    out.add(word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2))
+  }
+  return out
+}
+
 function rank(word: string, candidates: Map<string, number>): string[] {
+  const swapped = swaps(word)
   return [...candidates.entries()]
     .sort(([a, da], [b, db]) => {
       if (da !== db) return da - db
+      const sa = swapped.has(a) ? 0 : 1
+      const sb = swapped.has(b) ? 0 : 1
+      if (sa !== sb) return sa - sb
       const fa = a[0] === word[0] ? 0 : 1
       const fb = b[0] === word[0] ? 0 : 1
       if (fa !== fb) return fa - fb

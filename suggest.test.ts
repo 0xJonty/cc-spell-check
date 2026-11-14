@@ -11,6 +11,14 @@ describe('suggestionsFor', () => {
     expect(suggestionsFor('teh', dict, fresh())[0]).toBe('the')
   })
 
+  test('ranks a swapped-letter fix first among crowded same-distance words', () => {
+    // With a real dictionary many words sit one edit from "teh"; before swaps
+    // were ranked, "the" sorted sixth alphabetically and was never offered.
+    const crowded = new Set(['tea', 'tee', 'tel', 'ten', 'tet', 'the', 'and', 'ant', 'any', 'ado'])
+    expect(suggestionsFor('teh', crowded, fresh())[0]).toBe('the')
+    expect(suggestionsFor('adn', crowded, fresh())[0]).toBe('and')
+  })
+
   test('corrects incldue and recieve', () => {
     expect(suggestionsFor('incldue', dict, fresh())[0]).toBe('include')
     expect(suggestionsFor('recieve', dict, fresh())[0]).toBe('receive')
