@@ -23,14 +23,14 @@ function parseWords(lines: string[], stripFlags: boolean): DictData {
 
 /** Wordlist from `aspell dump master` output, one word per line. */
 export function parseAspellDump(stdout: string, isTruncated: boolean): DictData {
-  const lines = stdout.split('\n')
+  const lines = stdout.split(/\r?\n/) // Windows aspell emits CRLF
   if (isTruncated) lines.pop() // last line may be cut
   return parseWords(lines, false)
 }
 
 /** Wordlist from a hunspell .dic file: count line first, `word/FLAGS` after. */
 export function parseHunspellDic(text: string): DictData {
-  const lines = text.split('\n')
+  const lines = text.split(/\r?\n/)
   lines.shift() // first line is the entry count
   return parseWords(lines, true)
 }
