@@ -1,6 +1,7 @@
 {
   "name": "cc-spell-check",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Live spell check for the Claude Code terminal: red underlines in the prompt box, suggestion band above it",
   "author": { "name": "Jonty Atkinson" },
   "types": "./types/index.d.ts",
