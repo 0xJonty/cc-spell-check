@@ -32,6 +32,13 @@ describe('suggestionsFor', () => {
     expect(suggestionsFor('xqzjwklpv', dict, fresh())).toEqual([])
   })
 
+  test('skips candidate generation and caching for a very long pasted word', () => {
+    const cache = fresh()
+    const long = 'z'.repeat(2000)
+    expect(suggestionsFor(long, new Set([long.slice(1)]), cache)).toEqual([])
+    expect(cache.size).toBe(0)
+  })
+
   test('serves repeat lookups from the cache', () => {
     const cache = fresh()
     suggestionsFor('teh', dict, cache)

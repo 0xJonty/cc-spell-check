@@ -3,6 +3,7 @@ export type SpellActive = {
   start: number
   end: number
   isCapitalized: boolean
+  id: number
   kind: 'spelling' | 'contraction'
   fix?: string
 } | null

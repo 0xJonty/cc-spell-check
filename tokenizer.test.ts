@@ -47,4 +47,15 @@ describe('tokenize', () => {
     const personal = new Set(['zorp'])
     expect(flagged(tokenize('zorp Zorp'), dict, personal)).toEqual([])
   })
+
+  test('keeps accented letters and combining marks in the original UTF-16 range', () => {
+    const text = '🫖 café über naïve cafe\u0301'
+    expect(tokenize(text).map(({ word, start, end }) => [word, start, end])).toEqual([
+      ['café', 3, 7],
+      ['über', 8, 12],
+      ['naïve', 13, 18],
+      ['cafe\u0301', 19, 24],
+    ])
+    expect(flagged(tokenize(text), new Set(['café', 'über', 'naïve']), none)).toEqual([])
+  })
 })

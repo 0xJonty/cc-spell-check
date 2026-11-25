@@ -1,3 +1,5 @@
+import { wordKey } from './words'
+
 export type Token = {
   word: string
   start: number
@@ -13,12 +15,12 @@ const CODE_RE = /```[\s\S]*?(?:```|$)|`[^`\n]*`/g
 
 // Chunks containing any of these are never spell-checked: URLs, paths,
 // snake_case, digits (versions, hex, ids).
-const CHUNK_SKIP_RE = /[/\\_\d]/
+const CHUNK_SKIP_RE = /[/\\_\p{Nd}]/u
 const CHUNK_PREFIX_SKIP_RE = /^[@#/]/
 
-const CORE_RE = /^[A-Za-z]+(?:'[A-Za-z]+)*$/
-const ALLCAPS_RE = /^[A-Z]+$/
-const INTERNAL_CAPS_RE = /[A-Z]/
+const CORE_RE = /^\p{L}[\p{L}\p{M}]*(?:['’]\p{L}[\p{L}\p{M}]*)*$/u
+const CAPITALIZED_RE = /^\p{Lu}/u
+const INTERNAL_CAPS_RE = /^.[\s\S]*\p{Lu}/u
 const HEX_RE = /^[a-f]{6,}$/
 
 function codeRanges(text: string): Array<[number, number]> {
@@ -49,26 +51,25 @@ export function tokenize(text: string): Token[] {
     if (CHUNK_PREFIX_SKIP_RE.test(chunk) || CHUNK_SKIP_RE.test(chunk)) continue
 
     // Strip edge punctuation (quotes, commas, brackets, stray apostrophes).
-    const lead = /^[^A-Za-z]*/.exec(chunk)![0].length
-    const core = chunk.slice(lead).replace(/[^A-Za-z]+$/, '')
-    if (core.length <= 2) continue
+    const lead = /^[^\p{L}]*/u.exec(chunk)![0].length
+    const core = chunk.slice(lead).replace(/[^\p{L}\p{M}]+$/u, '')
     if (!CORE_RE.test(core)) continue
-    if (ALLCAPS_RE.test(core)) continue
-    if (INTERNAL_CAPS_RE.test(core.slice(1))) continue
+    if ((core.match(/\p{L}/gu)?.length ?? 0) <= 2) continue
+    if (INTERNAL_CAPS_RE.test(core)) continue
     if (HEX_RE.test(core)) continue
 
     tokens.push({
       word: core,
       start: chunkStart + lead,
       end: chunkStart + lead + core.length,
-      isCapitalized: /^[A-Z]/.test(core),
+      isCapitalized: CAPITALIZED_RE.test(core),
     })
   }
   return tokens
 }
 
 export function accept(word: string, dict: Accepts, personal: Accepts): boolean {
-  const w = word.toLowerCase()
+  const w = wordKey(word)
   return dict.has(w) || personal.has(w)
 }
 

@@ -1,18 +1,25 @@
+import { recase, wordKey } from './words'
+
 const LETTERS = "abcdefghijklmnopqrstuvwxyz'"
 const MAX_SUGGESTIONS = 3
 const MAX_EDITS2_HITS = 10
 const MAX_EDITS2_LENGTH = 8
+const MAX_SUGGESTION_LENGTH = 32
 export const SUGGEST_CACHE_CAP = 500
 
 function edits1(word: string): string[] {
   const out: string[] = []
-  for (let i = 0; i <= word.length; i++) {
-    const left = word.slice(0, i)
-    const right = word.slice(i)
-    if (right) out.push(left + right.slice(1)) // delete
-    if (right.length > 1) out.push(left + right[1] + right[0] + right.slice(2)) // transpose
+  const letters = [...word]
+  for (let i = 0; i <= letters.length; i++) {
+    const left = letters.slice(0, i).join('')
+    const right = letters.slice(i).join('')
+    const afterFirst = letters.slice(i + 1).join('')
+    if (right) out.push(left + afterFirst) // delete
+    if (i + 1 < letters.length) {
+      out.push(left + letters[i + 1] + letters[i] + letters.slice(i + 2).join('')) // transpose
+    }
     for (const c of LETTERS) {
-      if (right) out.push(left + c + right.slice(1)) // replace
+      if (right) out.push(left + c + afterFirst) // replace
       out.push(left + c + right) // insert
     }
   }
@@ -44,9 +51,10 @@ export function suggestionsFor(
   dict: Set<string>,
   cache: Map<string, string[]>,
 ): string[] {
-  const lower = word.toLowerCase()
+  if (word.length > MAX_SUGGESTION_LENGTH) return []
+  const lower = wordKey(word)
   const cached = cache.get(lower)
-  if (cached) return recase(cached, word)
+  if (cached) return cached.map(s => recase(s, word))
 
   const candidates = new Map<string, number>()
   const e1 = edits1(lower)
@@ -67,10 +75,5 @@ export function suggestionsFor(
   const ranked = rank(lower, candidates)
   if (cache.size >= SUGGEST_CACHE_CAP) cache.clear()
   cache.set(lower, ranked)
-  return recase(ranked, word)
-}
-
-function recase(suggestions: string[], word: string): string[] {
-  if (!/^[A-Z]/.test(word)) return suggestions
-  return suggestions.map(s => s.charAt(0).toUpperCase() + s.slice(1))
+  return ranked.map(s => recase(s, word))
 }
