@@ -8,8 +8,9 @@ Live spell check, fix suggestions, and a personal dictionary for the Claude Code
 > dictionary, and a `/spell` command. Enable one or the other, not both (double underlines).
 
 - Red underlines on misspelled words as you type. Orange underlines mark contractions with a missing apostrophe.
-- A suggestion band above the prompt with fix buttons and an add-to-dictionary button.
-- `/spell` command: `on | off | status | add <word> | remove <word>`.
+- The suggestion band shows up to three fixes by default. Set `maxSuggestions` from 1 to 9 in `/config`.
+- Use `/spell on`, `/spell off`, and `/spell status` to control spell check. Use `/spell add <word>` and `/spell remove <word>` to edit your personal dictionary.
+- Use `/spell fix recieve receive` to give a flagged typo a preferred correction. `/spell unfix recieve` removes the preference, and `/spell list` shows your personal dictionary and correction overrides.
 - The dictionary language defaults to `en_AU` and is configurable in `/config`. `/spell status` reports the loaded dictionary and language.
 - The personal dictionary persists across sessions. Suggestions change the draft only when selected.
 

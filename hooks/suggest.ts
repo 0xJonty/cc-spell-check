@@ -1,13 +1,19 @@
 import { recase, wordKey } from './words'
 
 const LETTERS = "abcdefghijklmnopqrstuvwxyz'"
-const MAX_SUGGESTIONS = 3
+export const DEFAULT_SUGGESTIONS = 3
+export const MAX_SUGGESTIONS = 9
 const MAX_EDITS2_HITS = 10
 const MAX_EDITS2_LENGTH = 8
 const MAX_SUGGESTION_LENGTH = 32
 export const SUGGEST_CACHE_CAP = 500
 
-function edits1(word: string): string[] {
+export function suggestionCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) return DEFAULT_SUGGESTIONS
+  return Math.min(Math.floor(value), MAX_SUGGESTIONS)
+}
+
+function edits1(word: string, swaps?: Set<string>): string[] {
   const out: string[] = []
   const letters = [...word]
   for (let i = 0; i <= letters.length; i++) {
@@ -16,7 +22,9 @@ function edits1(word: string): string[] {
     const afterFirst = letters.slice(i + 1).join('')
     if (right) out.push(left + afterFirst) // delete
     if (i + 1 < letters.length) {
-      out.push(left + letters[i + 1] + letters[i] + letters.slice(i + 2).join('')) // transpose
+      const transposed = left + letters[i + 1] + letters[i] + letters.slice(i + 2).join('')
+      out.push(transposed)
+      swaps?.add(transposed)
     }
     for (const c of LETTERS) {
       if (right) out.push(left + c + afterFirst) // replace
@@ -26,10 +34,12 @@ function edits1(word: string): string[] {
   return out
 }
 
-function rank(word: string, candidates: Map<string, number>): string[] {
+function rank(word: string, candidates: Map<string, number>, swaps: Set<string>): string[] {
   return [...candidates.entries()]
     .sort(([a, da], [b, db]) => {
       if (da !== db) return da - db
+      const bySwap = Number(swaps.has(b)) - Number(swaps.has(a))
+      if (bySwap) return bySwap
       const fa = a[0] === word[0] ? 0 : 1
       const fb = b[0] === word[0] ? 0 : 1
       if (fa !== fb) return fa - fb
@@ -43,21 +53,24 @@ function rank(word: string, candidates: Map<string, number>): string[] {
 }
 
 /**
- * Up to 3 corrections for a flagged word: dictionary words at edit distance 1,
- * falling back to distance 2 for short words. Cached per lowercased word.
+ * Prefer adjacent swaps within the same edit distance. Cache up to nine ranked
+ * candidates so callers can change the displayed count without recomputing.
  */
 export function suggestionsFor(
   word: string,
   dict: Set<string>,
   cache: Map<string, string[]>,
+  limit = DEFAULT_SUGGESTIONS,
 ): string[] {
   if (word.length > MAX_SUGGESTION_LENGTH) return []
+  const count = suggestionCount(limit)
   const lower = wordKey(word)
   const cached = cache.get(lower)
-  if (cached) return cached.map(s => recase(s, word))
+  if (cached) return cached.slice(0, count).map(s => recase(s, word))
 
   const candidates = new Map<string, number>()
-  const e1 = edits1(lower)
+  const swaps = new Set<string>()
+  const e1 = edits1(lower, swaps)
   for (const c of e1) {
     if (dict.has(c)) candidates.set(c, 1)
   }
@@ -72,8 +85,8 @@ export function suggestionsFor(
     }
   }
 
-  const ranked = rank(lower, candidates)
+  const ranked = rank(lower, candidates, swaps)
   if (cache.size >= SUGGEST_CACHE_CAP) cache.clear()
   cache.set(lower, ranked)
-  return ranked.map(s => recase(s, word))
+  return ranked.slice(0, count).map(s => recase(s, word))
 }

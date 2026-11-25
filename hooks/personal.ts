@@ -5,6 +5,7 @@ import { wordKey } from './words'
 const LEGACY_KEY = 'personalWords'
 const IMPORTED_PREFIX = 'personal.imported:'
 const WORD_PREFIX = 'personal.word:'
+const OVERRIDE_PREFIX = 'suggestion.override:'
 
 async function entryKey(prefix: string, word: string): Promise<string> {
   // The store caps key length at 256 UTF-16 code units. Keep long words in the value.
@@ -54,4 +55,35 @@ export async function readPersonalWords($: EngineInterface, migrate = false) {
 
 export async function writePersonalWord($: EngineInterface, word: string, added: boolean): Promise<void> {
   await $.store.set(await entryKey(WORD_PREFIX, word), [word, added])
+}
+
+function normalizeCorrections(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((v): v is string => typeof v === 'string').map(wordKey).filter(Boolean))]
+}
+
+export async function readSuggestionOverrides($: EngineInterface): Promise<Map<string, string[]>> {
+  const overrides = new Map<string, string[]>()
+  const legacy = await $.store.get('suggestOverrides')
+  if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
+    for (const [typo, value] of Object.entries(legacy)) {
+      const corrections = normalizeCorrections(value)
+      if (corrections.length) overrides.set(wordKey(typo), corrections)
+    }
+  }
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith(OVERRIDE_PREFIX)) continue
+    const entry = await $.store.get(key)
+    if (!Array.isArray(entry) || typeof entry[0] !== 'string' || !Array.isArray(entry[1])) continue
+    const [typo, value] = entry
+    const corrections = normalizeCorrections(value)
+    if (corrections.length) overrides.set(typo, corrections)
+    else overrides.delete(typo)
+  }
+  return overrides
+}
+
+export async function writeSuggestionOverride($: EngineInterface, typo: string, corrections: string[]) {
+  // An empty entry masks the previous value, including any entry from the old format.
+  await $.store.set(await entryKey(OVERRIDE_PREFIX, typo), [typo, corrections])
 }

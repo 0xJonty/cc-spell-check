@@ -1,7 +1,12 @@
 import { expect, test } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
 
-import { readPersonalWords, writePersonalWord } from './hooks/personal'
+import {
+  readPersonalWords,
+  readSuggestionOverrides,
+  writePersonalWord,
+  writeSuggestionOverride,
+} from './hooks/personal'
 
 function storeClient(shared: Map<string, unknown>) {
   const store: EngineInterface['store'] = {
@@ -48,4 +53,21 @@ test('a malformed legacy value does not prevent reading per-word entries', async
   const client = storeClient(shared)
   await writePersonalWord(client, 'zorp', true)
   expect([...(await readPersonalWords(client, true)).words]).toEqual(['zorp'])
+})
+
+test('concurrent overrides persist independently and removals mask old values', async () => {
+  const shared = new Map<string, unknown>([['suggestOverrides', { Teh: ['The'] }]])
+  const first = storeClient(shared)
+  const second = storeClient(shared)
+  expect((await readSuggestionOverrides(first)).get('teh')).toEqual(['the'])
+
+  await Promise.all([
+    writeSuggestionOverride(first, 'teh', []),
+    writeSuggestionOverride(second, 'adn', ['and']),
+  ])
+  await writeSuggestionOverride(first, 'recieve', ['receive'])
+  const saved = await readSuggestionOverrides(storeClient(shared))
+  expect(saved.size).toBe(2)
+  expect(saved.get('adn')).toEqual(['and'])
+  expect(saved.get('recieve')).toEqual(['receive'])
 })

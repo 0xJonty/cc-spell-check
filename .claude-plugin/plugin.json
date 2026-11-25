@@ -16,6 +16,14 @@
       "title": "Spell check enabled",
       "default": true,
       "description": "Spell check the prompt box"
+    },
+    "maxSuggestions": {
+      "type": "number",
+      "title": "Suggestions offered",
+      "default": 3,
+      "min": 1,
+      "max": 9,
+      "description": "How many fix buttons to show for a misspelled word"
     }
   }
 }

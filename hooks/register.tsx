@@ -3,8 +3,13 @@ import type { EngineInterface, PromptBox, PromptDecoration, Register } from 'cla
 
 import type { SpellActive, SpellDictStatus } from '../types'
 import { loadDictionary, type LoadedDictionary } from './dictionary'
-import { readPersonalWords, writePersonalWord } from './personal'
-import { suggestionsFor } from './suggest'
+import {
+  readPersonalWords,
+  readSuggestionOverrides,
+  writePersonalWord,
+  writeSuggestionOverride,
+} from './personal'
+import { suggestionCount, suggestionsFor } from './suggest'
 import { flagged, tokenize, type Token } from './tokenizer'
 import { recase, wordKey } from './words'
 
@@ -32,6 +37,8 @@ type Session = {
   dictionary: LoadedDictionary | null
   personal: Set<string>
   personalReady: Promise<void>
+  overrides: Map<string, string[]>
+  overridesReady: Promise<void>
   suggestion: Suggestion | null
   suggestionId: number
   draftRevision: number
@@ -52,10 +59,16 @@ function scan(session: Session, { text, cursor }: PromptBox): Flag[] {
     })
 }
 
-async function setSuggestion($: EngineInterface, session: Session, text: string, flag: Flag | undefined) {
+async function setSuggestion(
+  $: EngineInterface,
+  session: Session,
+  text: string,
+  flag: Flag | undefined,
+  force = false,
+) {
   if (
     (!flag && !session.suggestion) ||
-    (flag && session.suggestion?.text === text && session.suggestion.flag.start === flag.start &&
+    (!force && flag && session.suggestion?.text === text && session.suggestion.flag.start === flag.start &&
       session.suggestion.flag.word === flag.word)
   ) return
 
@@ -151,13 +164,63 @@ async function changeWords($: EngineInterface, session: Session, input: string[]
   ].filter(Boolean).join('\n')
 }
 
+async function renderNewSuggestions($: EngineInterface, session: Session) {
+  if (session.suggestion) {
+    const { text, flag } = session.suggestion
+    await setSuggestion($, session, text, flag, true)
+  }
+}
+
+async function changeOverrides($: EngineInterface, session: Session, typos: string[], corrections: string[]) {
+  await session.overridesReady
+  const saved: string[] = []
+  const failed: string[] = []
+  for (const typo of new Set(typos.map(wordKey))) {
+    try {
+      await writeSuggestionOverride($, typo, corrections)
+      if (corrections.length) session.overrides.set(typo, corrections)
+      else session.overrides.delete(typo)
+      saved.push(typo)
+    } catch {
+      failed.push(typo)
+    }
+  }
+  if (saved.length) await renderNewSuggestions($, session)
+  const messages: string[] = []
+  if (saved.length) {
+    messages.push(corrections.length
+      ? 'Suggestion overrides for ' + saved.join(', ') + ': ' + corrections.join(', ')
+      : 'Removed suggestion overrides: ' + saved.join(', '))
+  }
+  if (failed.length) messages.push('Could not save suggestion overrides for: ' + failed.join(', '))
+  return messages.join('\n')
+}
+
+async function listPreferences($: EngineInterface): Promise<string> {
+  try {
+    const [{ words }, overrides] = await Promise.all([readPersonalWords($), readSuggestionOverrides($)])
+    const dictionary = words.size
+      ? 'Personal dictionary (' + words.size + '): ' + [...words].sort().join(', ')
+      : 'Personal dictionary is empty.'
+    const fixes = [...overrides.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([typo, corrections]) => typo + ' -> ' + corrections.join(', '))
+    return dictionary + '\n' + (fixes.length ? 'Suggestion overrides:\n' + fixes.join('\n') : 'No suggestion overrides.')
+  } catch {
+    return 'Could not read the personal dictionary and suggestion overrides.'
+  }
+}
+
 export const register: Register = (on, options) => {
   const lang = String(options.lang ?? 'en_AU')
+  const maxSuggestions = suggestionCount(options.maxSuggestions)
   const session: Session = {
     enabled: options.enabled !== false,
     dictionary: null,
     personal: new Set(),
     personalReady: Promise.resolve(),
+    overrides: new Map(),
+    overridesReady: Promise.resolve(),
     suggestion: null,
     suggestionId: 0,
     draftRevision: 0,
@@ -169,7 +232,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'spell',
       description: 'Spell check: toggle, status, personal dictionary',
-      argumentHint: '[on|off|status|add <word>|remove <word>]',
+      argumentHint: '[on|off|status|list|add <word>|remove <word>|fix <typo> <fix>|unfix <typo>]',
     })
     await update($, isEnabled, () => session.enabled)
     await update($, active, () => null)
@@ -181,6 +244,13 @@ export const register: Register = (on, options) => {
       void refresh($, session, ++session.draftRevision)
     }).catch(() => {
       $.ui.toast('cc-spell-check: could not load the personal dictionary')
+    })
+
+    session.overridesReady = readSuggestionOverrides($).then(async overrides => {
+      session.overrides = overrides
+      await renderNewSuggestions($, session)
+    }).catch(() => {
+      $.ui.toast('cc-spell-check: could not load suggestion overrides')
     })
 
     void loadDictionary($, lang).then(async loaded => {
@@ -224,7 +294,13 @@ export const register: Register = (on, options) => {
     if (!cur || !selected || cur.id !== selected.flag.id || !session.dictionary ||
         !(await read($, isEnabled))) return next(e)
 
-    const sugg = cur.fix ? [cur.fix] : suggestionsFor(cur.word, session.dictionary.dict, session.suggestCache)
+    const own = (session.overrides.get(wordKey(cur.word)) ?? [])
+      .slice(0, maxSuggestions)
+      .map(word => recase(word, cur.word))
+    const automatic = cur.fix
+      ? [cur.fix]
+      : suggestionsFor(cur.word, session.dictionary.dict, session.suggestCache, maxSuggestions)
+    const sugg = [...new Set([...own, ...automatic])].slice(0, maxSuggestions)
     const { Box, Button, Text } = $.ui.resolve(e)
     const name = cur.word.length > 48 ? cur.word.slice(0, 48) + '…' : cur.word
     return (
@@ -280,6 +356,17 @@ export const register: Register = (on, options) => {
       case 'remove': {
         if (!words.length) return { text: 'Usage: /spell ' + verb + ' <word> [...]' }
         return { text: await changeWords($, session, words, verb === 'add') }
+      }
+      case 'list':
+        return { text: await listPreferences($) }
+      case 'fix': {
+        const [typo, ...corrections] = words
+        if (!typo || !corrections.length) return { text: 'Usage: /spell fix <typo> <correction> [...]' }
+        return { text: await changeOverrides($, session, [typo], [...new Set(corrections.map(wordKey))]) }
+      }
+      case 'unfix': {
+        if (!words.length) return { text: 'Usage: /spell unfix <typo> [...]' }
+        return { text: await changeOverrides($, session, words, []) }
       }
       default: {
         const status: SpellDictStatus = await read($, dictStatus)

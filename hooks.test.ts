@@ -134,6 +134,13 @@ describe('cc-spell-check hooks', () => {
     expect(await startWithDict($)).toContain('aspell en_AU, 9 words')
   })
 
+  test('recognizes words in CRLF dictionary output', async ($, on) => {
+    const term = harness($, on, { run: () => ({ ...ASPELL_OK, stdout: 'hello\r\nworld\r\n' }) })
+    expect(await startWithDict($)).toContain('2 words')
+    await term.edit('hello world', ' ')
+    expect(term.painted).toEqual([])
+  })
+
   test('paints an apostrophe-less contraction orange and accepts a curly apostrophe', async ($, on) => {
     const term = harness($, on)
     await startWithDict($)
@@ -277,5 +284,29 @@ describe('cc-spell-check hooks', () => {
     await startWithDict($)
     await term.edit('incldue the setu', 'p')
     expect(term.painted).toEqual([])
+  })
+
+  test('lists, displays and removes custom corrections', { options: { maxSuggestions: 2 } }, async ($, on) => {
+    const term = harness($, on)
+    await startWithDict($)
+    expect((await spell($, 'fix teh')).text).toContain('Usage')
+    await spell($, 'add zorp')
+    await term.edit('Teh', ' ')
+    const ui = await mount($)
+    await spell($, 'fix teh TEST the Then')
+    expect((await spell($, 'list')).text).toContain('teh -> test, the, then')
+    expect((await spell($, 'list')).text).toContain('zorp')
+    const fixes = async () => {
+      await ui.redraw()
+      return (await ui.findAll({ type: 'Button' })).filter(button => button.key?.startsWith('fix-'))
+    }
+    const shown = await until($, async () => {
+      const buttons = await fixes()
+      return buttons.length === 2 ? buttons : undefined
+    })
+    expect(shown.map(button => button.text)).toEqual(['Test', 'The'])
+    await spell($, 'unfix TEH')
+    expect((await spell($, 'list')).text).toContain('No suggestion overrides.')
+    expect((await fixes()).map(button => button.text)).toEqual(['The'])
   })
 })

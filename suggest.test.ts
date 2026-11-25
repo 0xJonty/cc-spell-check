@@ -11,6 +11,12 @@ describe('suggestionsFor', () => {
     expect(suggestionsFor('teh', dict, fresh())[0]).toBe('the')
   })
 
+  test('prioritizes adjacent swaps among equally close words', () => {
+    const crowded = new Set(['tea', 'ted', 'tee', 'ten', 'the', 'ada', 'adc', 'add', 'and'])
+    expect(suggestionsFor('teh', crowded, fresh())[0]).toBe('the')
+    expect(suggestionsFor('adn', crowded, fresh())[0]).toBe('and')
+  })
+
   test('corrects incldue and recieve', () => {
     expect(suggestionsFor('incldue', dict, fresh())[0]).toBe('include')
     expect(suggestionsFor('recieve', dict, fresh())[0]).toBe('receive')
@@ -26,6 +32,15 @@ describe('suggestionsFor', () => {
 
   test('caps suggestions at 3', () => {
     expect(suggestionsFor('aat', dict, fresh()).length).toBe(3)
+  })
+
+  test('uses the same cache across limits and caps suggestions at nine', () => {
+    const many = new Set(['bat', 'cat', 'eat', 'fat', 'hat', 'mat', 'pat', 'rat', 'sat', 'vat', 'oat'])
+    const cache = fresh()
+    expect(suggestionsFor('aat', many, cache, 1)).toHaveLength(1)
+    expect(suggestionsFor('aat', many, cache, 5)).toHaveLength(5)
+    expect(suggestionsFor('aat', many, cache, 50)).toHaveLength(9)
+    expect(suggestionsFor('aat', many, cache)).toHaveLength(3)
   })
 
   test('returns nothing for long gibberish', () => {
